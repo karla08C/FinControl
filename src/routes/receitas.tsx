@@ -7,7 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Trash2 } from "lucide-react";
 import { useIncomes, useIncomeCategories } from "@/lib/storage";
-import { formatBRL, type IncomeCategory } from "@/lib/finance";
+import { formatBRL, formatDateBR, parseCurrency, type IncomeCategory } from "@/lib/finance";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/receitas")({
   head: () => ({
@@ -32,6 +33,7 @@ function ReceitasPage() {
   const [source, setSource] = useState("");
   const [amount, setAmount] = useState("");
   const [filter, setFilter] = useState<"" | IncomeCategory>("");
+  const [submitting, setSubmitting] = useState(false);
 
   const filtered = useMemo(
     () =>
@@ -40,16 +42,41 @@ function ReceitasPage() {
         .sort((a, b) => b.date.localeCompare(a.date)),
     [incomes, filter],
   );
-  const total = filtered.reduce((s, i) => s + i.amount, 0);
+  const total = useMemo(() => filtered.reduce((s, i) => s + i.amount, 0), [filtered]);
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const value = parseFloat(amount.replace(",", "."));
-    if (!description.trim() || !value || isNaN(value)) return;
-    add({ date, description: description.trim(), category, source: source.trim() || "—", amount: value });
-    setDescription("");
-    setSource("");
-    setAmount("");
+    const value = parseCurrency(amount);
+    if (!description.trim()) {
+      toast.error("Informe a descrição da receita.");
+      return;
+    }
+    if (value <= 0) {
+      toast.error("Informe um valor maior que zero.");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await add({ date, description: description.trim(), category, source: source.trim() || "—", amount: value });
+      toast.success("Receita cadastrada com sucesso!");
+      setDescription("");
+      setSource("");
+      setAmount("");
+    } catch {
+      toast.error("Erro ao adicionar receita.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleRemove = async (id: string, desc: string) => {
+    try {
+      await remove(id);
+      toast.success(`Receita "${desc}" removida.`);
+    } catch {
+      toast.error("Erro ao remover receita.");
+    }
   };
 
   return (
@@ -74,7 +101,7 @@ function ReceitasPage() {
               </div>
               <div>
                 <Label htmlFor="cat">Categoria</Label>
-                <select id="cat" className="h-10 w-full rounded-md border bg-card px-3 text-sm" value={category} onChange={(e) => setCategory(e.target.value as IncomeCategory)}>
+                <select id="cat" className="h-10 w-full rounded-md border bg-card px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary" value={category} onChange={(e) => setCategory(e.target.value as IncomeCategory)}>
                   {INCOME_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
@@ -87,7 +114,9 @@ function ReceitasPage() {
                 <Input id="amount" inputMode="decimal" placeholder="0,00" value={amount} onChange={(e) => setAmount(e.target.value)} required />
               </div>
               <div className="md:col-span-6">
-                <Button type="submit" className="w-full md:w-auto">Adicionar receita</Button>
+                <Button type="submit" disabled={submitting} className="w-full md:w-auto">
+                  {submitting ? "Adicionando..." : "Adicionar receita"}
+                </Button>
               </div>
             </form>
           </CardContent>
@@ -97,7 +126,7 @@ function ReceitasPage() {
           <CardHeader className="flex flex-row items-center justify-between flex-wrap gap-3">
             <CardTitle>Lançamentos ({filtered.length})</CardTitle>
             <div className="flex items-center gap-3">
-              <select className="h-9 rounded-md border bg-card px-3 text-sm" value={filter} onChange={(e) => setFilter(e.target.value as "" | IncomeCategory)}>
+              <select className="h-9 rounded-md border bg-card px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary" value={filter} onChange={(e) => setFilter(e.target.value as "" | IncomeCategory)} aria-label="Filtrar por categoria">
                 <option value="">Todas categorias</option>
                 {INCOME_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
@@ -120,7 +149,7 @@ function ReceitasPage() {
                 <tbody className="divide-y">
                   {filtered.map((i) => (
                     <tr key={i.id} className="hover:bg-muted/50">
-                      <td className="py-2.5 px-2 tabular-nums">{new Date(i.date).toLocaleDateString("pt-BR")}</td>
+                      <td className="py-2.5 px-2 tabular-nums">{formatDateBR(i.date)}</td>
                       <td className="py-2.5 px-2">{i.description}</td>
                       <td className="py-2.5 px-2">
                         <span className="inline-flex items-center rounded-full bg-accent text-accent-foreground px-2 py-0.5 text-xs">{i.category}</span>
@@ -128,7 +157,7 @@ function ReceitasPage() {
                       <td className="py-2.5 px-2 text-muted-foreground">{i.source}</td>
                       <td className="py-2.5 px-2 text-right font-semibold tabular-nums text-success">{formatBRL(i.amount)}</td>
                       <td className="py-2.5 px-2 text-right">
-                        <button onClick={() => remove(i.id)} className="text-muted-foreground hover:text-destructive transition-colors" aria-label="Remover">
+                        <button onClick={() => handleRemove(i.id, i.description)} className="text-muted-foreground hover:text-destructive transition-colors p-1" aria-label={`Remover receita ${i.description}`}>
                           <Trash2 className="size-4" />
                         </button>
                       </td>

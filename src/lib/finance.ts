@@ -81,3 +81,62 @@ export const formatBRL = (v: number) =>
 
 export const monthLabel = (m: number) =>
   ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"][m];
+
+/**
+ * Decompõe uma string de data 'YYYY-MM-DD' em { year, month (0-11), day } de forma segura,
+ * evitando qualquer distorção de fuso horário / UTC.
+ */
+export function parseDateParts(dateStr: string): { year: number; month: number; day: number } {
+  if (!dateStr) {
+    const now = new Date();
+    return { year: now.getFullYear(), month: now.getMonth(), day: now.getDate() };
+  }
+  const parts = dateStr.slice(0, 10).split("-").map(Number);
+  if (parts.length < 3 || isNaN(parts[0]) || isNaN(parts[1]) || isNaN(parts[2])) {
+    const d = new Date(dateStr);
+    return { year: d.getFullYear(), month: d.getMonth(), day: d.getDate() };
+  }
+  return {
+    year: parts[0],
+    month: parts[1] - 1, // 0-indexed para compatibilidade com Date.getMonth()
+    day: parts[2],
+  };
+}
+
+/**
+ * Formata 'YYYY-MM-DD' para 'DD/MM/YYYY' sem deslocamento de timezone.
+ */
+export function formatDateBR(dateStr: string): string {
+  const { day, month, year } = parseDateParts(dateStr);
+  const dd = String(day).padStart(2, "0");
+  const mm = String(month + 1).padStart(2, "0");
+  return `${dd}/${mm}/${year}`;
+}
+
+/**
+ * Verifica se a data 'YYYY-MM-DD' pertence ao ano e mês (0-11) especificados.
+ */
+export function isSameMonth(dateStr: string, year: number, month: number): boolean {
+  const parts = parseDateParts(dateStr);
+  return parts.year === year && parts.month === month;
+}
+
+/**
+ * Converte input monetário flexível (ex: '1.250,50' ou '1250.50' ou '1250,50') em número válido positivo.
+ */
+export function parseCurrency(value: string): number {
+  if (typeof value !== "string") return Number(value) || 0;
+  const clean = value.trim().replace(/[^\d.,-]/g, "");
+  if (!clean) return 0;
+  if (clean.includes(",") && clean.includes(".")) {
+    const normalized = clean.replace(/\./g, "").replace(",", ".");
+    const num = parseFloat(normalized);
+    return isNaN(num) || num < 0 ? 0 : num;
+  }
+  if (clean.includes(",")) {
+    const num = parseFloat(clean.replace(",", "."));
+    return isNaN(num) || num < 0 ? 0 : num;
+  }
+  const num = parseFloat(clean);
+  return isNaN(num) || num < 0 ? 0 : num;
+}

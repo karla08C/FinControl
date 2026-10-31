@@ -18,7 +18,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { PiggyBank, Wallet, ArrowDownCircle, Scale } from "lucide-react";
 import { useExpenses, useBudgets, useIncomes, useCategories } from "@/lib/storage";
-import { formatBRL, monthLabel } from "@/lib/finance";
+import { formatBRL, monthLabel, parseDateParts, isSameMonth, formatDateBR } from "@/lib/finance";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -35,68 +35,146 @@ export const Route = createFileRoute("/")({
 });
 
 function Dashboard() {
-  const { expenses, hydrated } = useExpenses();
-  const { incomes } = useIncomes();
+  const { expenses, hydrated: expensesHydrated } = useExpenses();
+  const { incomes, hydrated: incomesHydrated } = useIncomes();
   const { all: CATEGORIES } = useCategories();
-  const { budgets } = useBudgets();
+  const { budgets, hydrated: budgetsHydrated } = useBudgets();
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
 
   const years = useMemo(() => {
-    const ys = new Set(expenses.map((e) => new Date(e.date).getFullYear()));
+    const ys = new Set(expenses.map((e) => parseDateParts(e.date).year));
     ys.add(now.getFullYear());
     return Array.from(ys).sort((a, b) => b - a);
   }, [expenses, now]);
 
-  const monthExpenses = expenses.filter((e) => {
-    const d = new Date(e.date);
-    return d.getFullYear() === year && d.getMonth() === month;
-  });
-  const yearExpenses = expenses.filter((e) => new Date(e.date).getFullYear() === year);
+  const monthExpenses = useMemo(
+    () => expenses.filter((e) => isSameMonth(e.date, year, month)),
+    [expenses, year, month],
+  );
 
-  const totalMonth = monthExpenses.reduce((s, e) => s + e.amount, 0);
-  const monthIncomes = incomes.filter((i) => {
-    const d = new Date(i.date);
-    return d.getFullYear() === year && d.getMonth() === month;
-  });
-  const totalIncome = monthIncomes.reduce((s, i) => s + i.amount, 0);
+  const yearExpenses = useMemo(
+    () => expenses.filter((e) => parseDateParts(e.date).year === year),
+    [expenses, year],
+  );
+
+  const totalMonth = useMemo(
+    () => monthExpenses.reduce((s, e) => s + e.amount, 0),
+    [monthExpenses],
+  );
+
+  const monthIncomes = useMemo(
+    () => incomes.filter((i) => isSameMonth(i.date, year, month)),
+    [incomes, year, month],
+  );
+
+  const yearIncomes = useMemo(
+    () => incomes.filter((i) => parseDateParts(i.date).year === year),
+    [incomes, year],
+  );
+
+  const totalIncome = useMemo(
+    () => monthIncomes.reduce((s, i) => s + i.amount, 0),
+    [monthIncomes],
+  );
+
   const balance = totalIncome - totalMonth;
   const totalBudget = Object.values(budgets).reduce((s, v) => s + (v ?? 0), 0);
-  const invested = monthExpenses.filter((e) => e.category === "Investimentos").reduce((s, e) => s + e.amount, 0);
+  const invested = monthExpenses
+    .filter((e) => e.category === "Investimentos")
+    .reduce((s, e) => s + e.amount, 0);
+
   const lastMonthIdx = month === 0 ? 11 : month - 1;
   const lastMonthYear = month === 0 ? year - 1 : year;
-  const lastMonthTotal = expenses
-    .filter((e) => {
-      const d = new Date(e.date);
-      return d.getMonth() === lastMonthIdx && d.getFullYear() === lastMonthYear;
-    })
-    .reduce((s, e) => s + e.amount, 0);
-  const delta = lastMonthTotal === 0 ? 0 : ((totalMonth - lastMonthTotal) / lastMonthTotal) * 100;
 
-  const yearIncomes = incomes.filter((i) => new Date(i.date).getFullYear() === year);
-  const monthlyTotals = Array.from({ length: 12 }, (_, m) => {
-    const despesas = yearExpenses.filter((e) => new Date(e.date).getMonth() === m).reduce((s, e) => s + e.amount, 0);
-    const receitas = yearIncomes.filter((i) => new Date(i.date).getMonth() === m).reduce((s, i) => s + i.amount, 0);
-    return { month: monthLabel(m), despesas, receitas, saldo: receitas - despesas };
-  });
+  // Comparativo real de investimentos mês a mês
+  const lastMonthInvested = useMemo(
+    () =>
+      expenses
+        .filter((e) => isSameMonth(e.date, lastMonthYear, lastMonthIdx) && e.category === "Investimentos")
+        .reduce((s, e) => s + e.amount, 0),
+    [expenses, lastMonthYear, lastMonthIdx],
+  );
 
-  const byCategory = CATEGORIES.map((cat) => ({
-    name: cat,
-    value: monthExpenses.filter((e) => e.category === cat).reduce((s, e) => s + e.amount, 0),
-  })).filter((c) => c.value > 0);
+  const investedDelta =
+    lastMonthInvested === 0
+      ? invested > 0
+        ? 100
+        : 0
+      : ((invested - lastMonthInvested) / lastMonthInvested) * 100;
 
-  const chartColors = ["chart-1","chart-2","chart-3","chart-4","chart-5","chart-6","chart-7","chart-8"];
+  const monthlyTotals = useMemo(() => {
+    return Array.from({ length: 12 }, (_, m) => {
+      const despesas = yearExpenses
+        .filter((e) => parseDateParts(e.date).month === m)
+        .reduce((s, e) => s + e.amount, 0);
+      const receitas = yearIncomes
+        .filter((i) => parseDateParts(i.date).month === m)
+        .reduce((s, i) => s + i.amount, 0);
+      return { month: monthLabel(m), despesas, receitas, saldo: receitas - despesas };
+    });
+  }, [yearExpenses, yearIncomes]);
+
+  const byCategory = useMemo(() => {
+    return CATEGORIES.map((cat) => ({
+      name: cat,
+      value: monthExpenses.filter((e) => e.category === cat).reduce((s, e) => s + e.amount, 0),
+    })).filter((c) => c.value > 0);
+  }, [CATEGORIES, monthExpenses]);
+
+  const chartColors = ["chart-1", "chart-2", "chart-3", "chart-4", "chart-5", "chart-6", "chart-7", "chart-8"];
 
   const stats = [
-    { label: "Receitas do mês", value: formatBRL(totalIncome), icon: ArrowDownCircle, hint: `${monthLabel(month)} / ${year}` },
-    { label: "Gasto no mês", value: formatBRL(totalMonth), icon: Wallet, hint: `${((totalMonth / Math.max(totalBudget,1)) * 100).toFixed(0)}% do orçamento` },
-    { label: "Saldo do mês", value: formatBRL(balance), icon: Scale, hint: balance >= 0 ? "Sobrou" : "Negativo" },
-    { label: "Investido no mês", value: formatBRL(invested), icon: PiggyBank, hint: `vs. mês anterior ${delta >= 0 ? "+" : ""}${delta.toFixed(1)}%` },
+    {
+      label: "Receitas do mês",
+      value: formatBRL(totalIncome),
+      icon: ArrowDownCircle,
+      hint: `${monthLabel(month)} / ${year}`,
+    },
+    {
+      label: "Gasto no mês",
+      value: formatBRL(totalMonth),
+      icon: Wallet,
+      hint: `${((totalMonth / Math.max(totalBudget, 1)) * 100).toFixed(0)}% do orçamento`,
+    },
+    {
+      label: "Saldo do mês",
+      value: formatBRL(balance),
+      icon: Scale,
+      hint: balance >= 0 ? "Sobrou" : "Negativo",
+    },
+    {
+      label: "Investido no mês",
+      value: formatBRL(invested),
+      icon: PiggyBank,
+      hint:
+        lastMonthInvested === 0 && invested === 0
+          ? "Sem aportes registrados"
+          : `vs. mês anterior ${investedDelta >= 0 ? "+" : ""}${investedDelta.toFixed(1)}%`,
+    },
   ];
-  
 
-  if (!hydrated) return <AppShell><div className="p-8" /></AppShell>;
+  const hydrated = expensesHydrated && incomesHydrated && budgetsHydrated;
+
+  if (!hydrated) {
+    return (
+      <AppShell>
+        <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-6 animate-pulse">
+          <div className="h-10 w-48 bg-muted rounded-md" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="h-28 bg-muted rounded-xl" />
+            ))}
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="h-80 bg-muted rounded-xl lg:col-span-2" />
+            <div className="h-80 bg-muted rounded-xl" />
+          </div>
+        </div>
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell>
@@ -108,21 +186,27 @@ function Dashboard() {
           </div>
           <div className="flex items-center gap-2">
             <select
-              className="h-10 rounded-md border bg-card px-3 text-sm"
+              className="h-10 rounded-md border bg-card px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
               value={month}
               onChange={(e) => setMonth(Number(e.target.value))}
+              aria-label="Selecionar mês"
             >
               {Array.from({ length: 12 }, (_, i) => (
-                <option key={i} value={i}>{monthLabel(i)}</option>
+                <option key={i} value={i}>
+                  {monthLabel(i)}
+                </option>
               ))}
             </select>
             <select
-              className="h-10 rounded-md border bg-card px-3 text-sm"
+              className="h-10 rounded-md border bg-card px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
               value={year}
               onChange={(e) => setYear(Number(e.target.value))}
+              aria-label="Selecionar ano"
             >
               {years.map((y) => (
-                <option key={y} value={y}>{y}</option>
+                <option key={y} value={y}>
+                  {y}
+                </option>
               ))}
             </select>
             <Button asChild>
@@ -156,7 +240,7 @@ function Dashboard() {
             </CardHeader>
             <CardContent>
               <div className="h-72">
-                <ResponsiveContainer>
+                <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={monthlyTotals}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                     <XAxis dataKey="month" stroke="var(--muted-foreground)" fontSize={12} />
@@ -183,7 +267,7 @@ function Dashboard() {
                 {byCategory.length === 0 ? (
                   <div className="h-full grid place-items-center text-sm text-muted-foreground">Sem despesas neste mês</div>
                 ) : (
-                  <ResponsiveContainer>
+                  <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie data={byCategory} dataKey="value" nameKey="name" innerRadius={50} outerRadius={90} paddingAngle={2}>
                         {byCategory.map((_entry, i) => (
@@ -214,7 +298,7 @@ function Dashboard() {
                   <div>
                     <div className="font-medium">{e.description}</div>
                     <div className="text-xs text-muted-foreground">
-                      {new Date(e.date).toLocaleDateString("pt-BR")} · {e.category} · {e.payment}
+                      {formatDateBR(e.date)} · {e.category} · {e.payment}
                     </div>
                   </div>
                   <div className="font-semibold tabular-nums">{formatBRL(e.amount)}</div>

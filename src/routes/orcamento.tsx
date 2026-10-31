@@ -1,14 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Plus, Trash2 } from "lucide-react";
-import { useState as useStateLocal } from "react";
 import { useExpenses, useBudgets, useCategories, useIncomeCategories } from "@/lib/storage";
-import { formatBRL, monthLabel, type Category } from "@/lib/finance";
+import { formatBRL, monthLabel, isSameMonth, parseCurrency, type Category } from "@/lib/finance";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/orcamento")({
   head: () => ({
@@ -32,29 +32,44 @@ function OrcamentoPage() {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
-  const [newExpCat, setNewExpCat] = useStateLocal("");
-  const [newIncCat, setNewIncCat] = useStateLocal("");
+  const [newExpCat, setNewExpCat] = useState("");
+  const [newIncCat, setNewIncCat] = useState("");
 
   type Row = { cat: string; spent: number; budget: number; pct: number };
-  const rows: Row[] = expCats.all.map((cat) => {
-    const spent = expenses
-      .filter((e) => {
-        const d = new Date(e.date);
-        return e.category === cat && d.getFullYear() === year && d.getMonth() === month;
-      })
-      .reduce((s, e) => s + e.amount, 0);
-    const budget = budgets[cat] ?? 0;
-    const pct = budget > 0 ? spent / budget : 0;
-    return { cat, spent, budget, pct };
-  });
+  const rows: Row[] = useMemo(() => {
+    return expCats.all.map((cat) => {
+      const spent = expenses
+        .filter((e) => e.category === cat && isSameMonth(e.date, year, month))
+        .reduce((s, e) => s + e.amount, 0);
+      const budget = budgets[cat] ?? 0;
+      const pct = budget > 0 ? spent / budget : 0;
+      return { cat, spent, budget, pct };
+    });
+  }, [expCats.all, expenses, year, month, budgets]);
 
-  const totalSpent = rows.reduce((s: number, r: Row) => s + r.spent, 0);
-  const totalBudget = rows.reduce((s: number, r: Row) => s + r.budget, 0);
+  const totalSpent = useMemo(() => rows.reduce((s: number, r: Row) => s + r.spent, 0), [rows]);
+  const totalBudget = useMemo(() => rows.reduce((s: number, r: Row) => s + r.budget, 0), [rows]);
   const totalPct = totalBudget > 0 ? totalSpent / totalBudget : 0;
 
   const updateBudget = (cat: Category, value: string) => {
-    const v = parseFloat(value.replace(",", "."));
-    setBudgets({ ...budgets, [cat]: isNaN(v) ? 0 : v });
+    const v = parseCurrency(value);
+    setBudgets({ ...budgets, [cat]: v });
+  };
+
+  const handleAddExpCat = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newExpCat.trim()) return;
+    expCats.add(newExpCat.trim());
+    toast.success(`Categoria "${newExpCat.trim()}" adicionada.`);
+    setNewExpCat("");
+  };
+
+  const handleAddIncCat = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newIncCat.trim()) return;
+    incCats.add(newIncCat.trim());
+    toast.success(`Categoria "${newIncCat.trim()}" adicionada.`);
+    setNewIncCat("");
   };
 
   return (
@@ -66,11 +81,29 @@ function OrcamentoPage() {
             <p className="text-muted-foreground mt-1">Defina limites mensais e veja onde você está estourando.</p>
           </div>
           <div className="flex items-center gap-2">
-            <select className="h-10 rounded-md border bg-card px-3 text-sm" value={month} onChange={(e) => setMonth(Number(e.target.value))}>
-              {Array.from({ length: 12 }, (_, i) => <option key={i} value={i}>{monthLabel(i)}</option>)}
+            <select
+              className="h-10 rounded-md border bg-card px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              value={month}
+              onChange={(e) => setMonth(Number(e.target.value))}
+              aria-label="Selecionar mês"
+            >
+              {Array.from({ length: 12 }, (_, i) => (
+                <option key={i} value={i}>
+                  {monthLabel(i)}
+                </option>
+              ))}
             </select>
-            <select className="h-10 rounded-md border bg-card px-3 text-sm" value={year} onChange={(e) => setYear(Number(e.target.value))}>
-              {[year - 1, year, year + 1].map((y) => <option key={y} value={y}>{y}</option>)}
+            <select
+              className="h-10 rounded-md border bg-card px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              value={year}
+              onChange={(e) => setYear(Number(e.target.value))}
+              aria-label="Selecionar ano"
+            >
+              {[year - 1, year, year + 1].map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
             </select>
           </div>
         </header>
@@ -79,12 +112,19 @@ function OrcamentoPage() {
           <CardContent className="pt-6">
             <div className="flex flex-wrap items-baseline justify-between gap-3 mb-3">
               <div>
-                <div className="text-sm text-muted-foreground">Total — {monthLabel(month)}/{year}</div>
+                <div className="text-sm text-muted-foreground">
+                  Total — {monthLabel(month)}/{year}
+                </div>
                 <div className="text-2xl font-semibold mt-1">
                   {formatBRL(totalSpent)} <span className="text-muted-foreground text-base">/ {formatBRL(totalBudget)}</span>
                 </div>
               </div>
-              <div className={cn("text-sm font-semibold", totalPct >= 1 ? "text-destructive" : totalPct >= 0.8 ? "text-warning" : "text-success")}>
+              <div
+                className={cn(
+                  "text-sm font-semibold",
+                  totalPct >= 1 ? "text-destructive" : totalPct >= 0.8 ? "text-warning" : "text-success",
+                )}
+              >
                 {(totalPct * 100).toFixed(0)}% usado
               </div>
             </div>
@@ -93,7 +133,9 @@ function OrcamentoPage() {
         </Card>
 
         <Card>
-          <CardHeader><CardTitle>Por categoria</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>Por categoria</CardTitle>
+          </CardHeader>
           <CardContent>
             <div className="space-y-5">
               {rows.map((r: Row) => (
@@ -102,9 +144,12 @@ function OrcamentoPage() {
                     {r.cat}
                     {expCats.isCustom(r.cat) && (
                       <button
-                        onClick={() => expCats.remove(r.cat)}
-                        className="text-muted-foreground hover:text-destructive"
-                        aria-label="Remover categoria"
+                        onClick={() => {
+                          expCats.remove(r.cat);
+                          toast.success(`Categoria "${r.cat}" removida.`);
+                        }}
+                        className="text-muted-foreground hover:text-destructive p-0.5"
+                        aria-label={`Remover categoria ${r.cat}`}
                         title="Remover categoria customizada"
                       >
                         <Trash2 className="size-3.5" />
@@ -123,9 +168,17 @@ function OrcamentoPage() {
                       <span className="text-xs text-muted-foreground">R$</span>
                       <Input
                         inputMode="decimal"
-                        value={r.budget}
-                        onChange={(e) => updateBudget(r.cat, e.target.value)}
+                        defaultValue={r.budget || ""}
+                        key={`${r.cat}-${r.budget}`}
+                        onBlur={(e) => updateBudget(r.cat, e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            (e.target as HTMLInputElement).blur();
+                          }
+                        }}
                         className="h-9"
+                        placeholder="0,00"
+                        aria-label={`Limite de orçamento para ${r.cat}`}
                       />
                     </div>
                   </div>
@@ -136,28 +189,44 @@ function OrcamentoPage() {
         </Card>
 
         <Card>
-          <CardHeader><CardTitle>Gerenciar categorias</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>Gerenciar categorias</CardTitle>
+          </CardHeader>
           <CardContent className="space-y-6">
             <div>
               <div className="text-sm font-medium mb-2">Categorias de despesas</div>
               <div className="flex flex-wrap gap-2 mb-3">
                 {expCats.all.map((c) => (
-                  <span key={c} className="inline-flex items-center gap-1.5 rounded-full bg-accent text-accent-foreground px-3 py-1 text-xs">
+                  <span
+                    key={c}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-accent text-accent-foreground px-3 py-1 text-xs"
+                  >
                     {c}
                     {expCats.isCustom(c) && (
-                      <button onClick={() => expCats.remove(c)} aria-label={`Remover ${c}`}>
+                      <button
+                        onClick={() => {
+                          expCats.remove(c);
+                          toast.success(`Categoria "${c}" removida.`);
+                        }}
+                        aria-label={`Remover ${c}`}
+                      >
                         <Trash2 className="size-3" />
                       </button>
                     )}
                   </span>
                 ))}
               </div>
-              <form
-                onSubmit={(e) => { e.preventDefault(); expCats.add(newExpCat); setNewExpCat(""); }}
-                className="flex gap-2"
-              >
-                <Input placeholder="Nova categoria de despesa" value={newExpCat} onChange={(e) => setNewExpCat(e.target.value)} />
-                <Button type="submit" size="sm"><Plus className="size-4" />Adicionar</Button>
+              <form onSubmit={handleAddExpCat} className="flex gap-2">
+                <Input
+                  placeholder="Nova categoria de despesa"
+                  value={newExpCat}
+                  onChange={(e) => setNewExpCat(e.target.value)}
+                  aria-label="Nome da nova categoria de despesa"
+                />
+                <Button type="submit" size="sm">
+                  <Plus className="size-4 mr-1" />
+                  Adicionar
+                </Button>
               </form>
             </div>
 
@@ -165,22 +234,36 @@ function OrcamentoPage() {
               <div className="text-sm font-medium mb-2">Categorias de receitas</div>
               <div className="flex flex-wrap gap-2 mb-3">
                 {incCats.all.map((c) => (
-                  <span key={c} className="inline-flex items-center gap-1.5 rounded-full bg-accent text-accent-foreground px-3 py-1 text-xs">
+                  <span
+                    key={c}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-accent text-accent-foreground px-3 py-1 text-xs"
+                  >
                     {c}
                     {incCats.isCustom(c) && (
-                      <button onClick={() => incCats.remove(c)} aria-label={`Remover ${c}`}>
+                      <button
+                        onClick={() => {
+                          incCats.remove(c);
+                          toast.success(`Categoria "${c}" removida.`);
+                        }}
+                        aria-label={`Remover ${c}`}
+                      >
                         <Trash2 className="size-3" />
                       </button>
                     )}
                   </span>
                 ))}
               </div>
-              <form
-                onSubmit={(e) => { e.preventDefault(); incCats.add(newIncCat); setNewIncCat(""); }}
-                className="flex gap-2"
-              >
-                <Input placeholder="Nova categoria de receita" value={newIncCat} onChange={(e) => setNewIncCat(e.target.value)} />
-                <Button type="submit" size="sm"><Plus className="size-4" />Adicionar</Button>
+              <form onSubmit={handleAddIncCat} className="flex gap-2">
+                <Input
+                  placeholder="Nova categoria de receita"
+                  value={newIncCat}
+                  onChange={(e) => setNewIncCat(e.target.value)}
+                  aria-label="Nome da nova categoria de receita"
+                />
+                <Button type="submit" size="sm">
+                  <Plus className="size-4 mr-1" />
+                  Adicionar
+                </Button>
               </form>
             </div>
           </CardContent>
@@ -196,7 +279,7 @@ function ProgressBar({ pct }: { pct: number }) {
   const color = pct >= 1 ? "bg-destructive" : pct >= 0.8 ? "bg-warning" : "bg-success";
   return (
     <div className="relative h-2 w-full rounded-full bg-muted overflow-hidden">
-      <div className={cn("h-full transition-all", color)} style={{ width: `${capped * 100}%` }} />
+      <div className={cn("h-full transition-all duration-300", color)} style={{ width: `${capped * 100}%` }} />
       {over && <div className="absolute inset-y-0 right-0 w-1 bg-destructive-foreground/40" />}
     </div>
   );

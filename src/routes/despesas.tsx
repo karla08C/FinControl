@@ -6,9 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Trash2 } from "lucide-react";
-import { useExpenses } from "@/lib/storage";
-import { useCategories } from "@/lib/storage";
-import { PAYMENT_METHODS, formatBRL, type Category } from "@/lib/finance";
+import { useExpenses, useCategories } from "@/lib/storage";
+import { PAYMENT_METHODS, formatBRL, formatDateBR, parseCurrency, type Category } from "@/lib/finance";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/despesas")({
   head: () => ({
@@ -33,6 +33,7 @@ function DespesasPage() {
   const [payment, setPayment] = useState(PAYMENT_METHODS[0]);
   const [amount, setAmount] = useState("");
   const [filter, setFilter] = useState<"" | Category>("");
+  const [submitting, setSubmitting] = useState(false);
 
   const filtered = useMemo(
     () =>
@@ -41,15 +42,40 @@ function DespesasPage() {
         .sort((a, b) => b.date.localeCompare(a.date)),
     [expenses, filter],
   );
-  const total = filtered.reduce((s, e) => s + e.amount, 0);
+  const total = useMemo(() => filtered.reduce((s, e) => s + e.amount, 0), [filtered]);
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const value = parseFloat(amount.replace(",", "."));
-    if (!description.trim() || !value || isNaN(value)) return;
-    add({ date, description: description.trim(), category, payment, amount: value });
-    setDescription("");
-    setAmount("");
+    const value = parseCurrency(amount);
+    if (!description.trim()) {
+      toast.error("Informe a descrição da despesa.");
+      return;
+    }
+    if (value <= 0) {
+      toast.error("Informe um valor maior que zero.");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await add({ date, description: description.trim(), category, payment, amount: value });
+      toast.success("Despesa cadastrada com sucesso!");
+      setDescription("");
+      setAmount("");
+    } catch {
+      toast.error("Erro ao adicionar despesa.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleRemove = async (id: string, desc: string) => {
+    try {
+      await remove(id);
+      toast.success(`Despesa "${desc}" removida.`);
+    } catch {
+      toast.error("Erro ao remover despesa.");
+    }
   };
 
   return (
@@ -74,13 +100,13 @@ function DespesasPage() {
               </div>
               <div>
                 <Label htmlFor="cat">Categoria</Label>
-                <select id="cat" className="h-10 w-full rounded-md border bg-card px-3 text-sm" value={category} onChange={(e) => setCategory(e.target.value as Category)}>
+                <select id="cat" className="h-10 w-full rounded-md border bg-card px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary" value={category} onChange={(e) => setCategory(e.target.value as Category)}>
                   {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
               <div>
                 <Label htmlFor="pay">Pagamento</Label>
-                <select id="pay" className="h-10 w-full rounded-md border bg-card px-3 text-sm" value={payment} onChange={(e) => setPayment(e.target.value)}>
+                <select id="pay" className="h-10 w-full rounded-md border bg-card px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary" value={payment} onChange={(e) => setPayment(e.target.value)}>
                   {PAYMENT_METHODS.map((p) => <option key={p} value={p}>{p}</option>)}
                 </select>
               </div>
@@ -89,7 +115,9 @@ function DespesasPage() {
                 <Input id="amount" inputMode="decimal" placeholder="0,00" value={amount} onChange={(e) => setAmount(e.target.value)} required />
               </div>
               <div className="md:col-span-6">
-                <Button type="submit" className="w-full md:w-auto">Adicionar despesa</Button>
+                <Button type="submit" disabled={submitting} className="w-full md:w-auto">
+                  {submitting ? "Adicionando..." : "Adicionar despesa"}
+                </Button>
               </div>
             </form>
           </CardContent>
@@ -99,7 +127,7 @@ function DespesasPage() {
           <CardHeader className="flex flex-row items-center justify-between flex-wrap gap-3">
             <CardTitle>Lançamentos ({filtered.length})</CardTitle>
             <div className="flex items-center gap-3">
-              <select className="h-9 rounded-md border bg-card px-3 text-sm" value={filter} onChange={(e) => setFilter(e.target.value as "" | Category)}>
+              <select className="h-9 rounded-md border bg-card px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary" value={filter} onChange={(e) => setFilter(e.target.value as "" | Category)} aria-label="Filtrar por categoria">
                 <option value="">Todas categorias</option>
                 {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
@@ -122,7 +150,7 @@ function DespesasPage() {
                 <tbody className="divide-y">
                   {filtered.map((e) => (
                     <tr key={e.id} className="hover:bg-muted/50">
-                      <td className="py-2.5 px-2 tabular-nums">{new Date(e.date).toLocaleDateString("pt-BR")}</td>
+                      <td className="py-2.5 px-2 tabular-nums">{formatDateBR(e.date)}</td>
                       <td className="py-2.5 px-2">{e.description}</td>
                       <td className="py-2.5 px-2">
                         <span className="inline-flex items-center rounded-full bg-accent text-accent-foreground px-2 py-0.5 text-xs">{e.category}</span>
@@ -130,7 +158,7 @@ function DespesasPage() {
                       <td className="py-2.5 px-2 text-muted-foreground">{e.payment}</td>
                       <td className="py-2.5 px-2 text-right font-semibold tabular-nums">{formatBRL(e.amount)}</td>
                       <td className="py-2.5 px-2 text-right">
-                        <button onClick={() => remove(e.id)} className="text-muted-foreground hover:text-destructive transition-colors" aria-label="Remover">
+                        <button onClick={() => handleRemove(e.id, e.description)} className="text-muted-foreground hover:text-destructive transition-colors p-1" aria-label={`Remover despesa ${e.description}`}>
                           <Trash2 className="size-4" />
                         </button>
                       </td>
