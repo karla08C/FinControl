@@ -4,6 +4,7 @@ export default defineConfig({
   tanstackStart: {
     server: { entry: "server" },
     client: { entry: "client" },
+    spa: { enabled: true },
   },
   nitro: {
     preset: "vercel",
