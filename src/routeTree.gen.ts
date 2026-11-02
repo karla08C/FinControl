@@ -11,8 +11,10 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthRouteImport } from './routes/auth'
+import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as DespesasRouteImport } from './routes/despesas'
 import { Route as InvestimentosRouteImport } from './routes/investimentos'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as OrcamentoRouteImport } from './routes/orcamento'
 import { Route as PerfilRouteImport } from './routes/perfil'
 import { Route as ReceitasRouteImport } from './routes/receitas'
@@ -28,6 +30,11 @@ const AuthRoute = AuthRouteImport.update({
   path: '/auth',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DashboardRoute = DashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DespesasRoute = DespesasRouteImport.update({
   id: '/despesas',
   path: '/despesas',
@@ -36,6 +43,11 @@ const DespesasRoute = DespesasRouteImport.update({
 const InvestimentosRoute = InvestimentosRouteImport.update({
   id: '/investimentos',
   path: '/investimentos',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
 const OrcamentoRoute = OrcamentoRouteImport.update({
@@ -62,8 +74,10 @@ const ResetPasswordRoute = ResetPasswordRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/dashboard': typeof DashboardRoute
   '/despesas': typeof DespesasRoute
   '/investimentos': typeof InvestimentosRoute
+  '/login': typeof LoginRoute
   '/orcamento': typeof OrcamentoRoute
   '/perfil': typeof PerfilRoute
   '/receitas': typeof ReceitasRoute
@@ -72,8 +86,10 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/dashboard': typeof DashboardRoute
   '/despesas': typeof DespesasRoute
   '/investimentos': typeof InvestimentosRoute
+  '/login': typeof LoginRoute
   '/orcamento': typeof OrcamentoRoute
   '/perfil': typeof PerfilRoute
   '/receitas': typeof ReceitasRoute
@@ -83,8 +99,10 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/dashboard': typeof DashboardRoute
   '/despesas': typeof DespesasRoute
   '/investimentos': typeof InvestimentosRoute
+  '/login': typeof LoginRoute
   '/orcamento': typeof OrcamentoRoute
   '/perfil': typeof PerfilRoute
   '/receitas': typeof ReceitasRoute
@@ -95,8 +113,10 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/auth'
+    | '/dashboard'
     | '/despesas'
     | '/investimentos'
+    | '/login'
     | '/orcamento'
     | '/perfil'
     | '/receitas'
@@ -105,8 +125,10 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/auth'
+    | '/dashboard'
     | '/despesas'
     | '/investimentos'
+    | '/login'
     | '/orcamento'
     | '/perfil'
     | '/receitas'
@@ -115,8 +137,10 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/auth'
+    | '/dashboard'
     | '/despesas'
     | '/investimentos'
+    | '/login'
     | '/orcamento'
     | '/perfil'
     | '/receitas'
@@ -126,8 +150,10 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthRoute: typeof AuthRoute
+  DashboardRoute: typeof DashboardRoute
   DespesasRoute: typeof DespesasRoute
   InvestimentosRoute: typeof InvestimentosRoute
+  LoginRoute: typeof LoginRoute
   OrcamentoRoute: typeof OrcamentoRoute
   PerfilRoute: typeof PerfilRoute
   ReceitasRoute: typeof ReceitasRoute
@@ -150,6 +176,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/dashboard': {
+      id: '/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof DashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/despesas': {
       id: '/despesas'
       path: '/despesas'
@@ -162,6 +195,13 @@ declare module '@tanstack/react-router' {
       path: '/investimentos'
       fullPath: '/investimentos'
       preLoaderRoute: typeof InvestimentosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/orcamento': {
@@ -198,8 +238,10 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRoute: AuthRoute,
+  DashboardRoute: DashboardRoute,
   DespesasRoute: DespesasRoute,
   InvestimentosRoute: InvestimentosRoute,
+  LoginRoute: LoginRoute,
   OrcamentoRoute: OrcamentoRoute,
   PerfilRoute: PerfilRoute,
   ReceitasRoute: ReceitasRoute,

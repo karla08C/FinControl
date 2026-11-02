@@ -1,0 +1,10 @@
+{
+  "cleanUrls": true,
+  "redirects": [
+    { "source": "/login", "destination": "/auth", "permanent": false },
+    { "source": "/entrar", "destination": "/auth", "permanent": false },
+    { "source": "/cadastro", "destination": "/auth", "permanent": false },
+    { "source": "/dashboard", "destination": "/", "permanent": false },
+    { "source": "/home", "destination": "/", "permanent": false }
+  ]
+}
