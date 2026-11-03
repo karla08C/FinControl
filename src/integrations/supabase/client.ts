@@ -9,8 +9,8 @@ function createSupabaseClient() {
   const rawUrl = (import.meta.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '').trim().replace(/^\uFEFF/, '').replace(/^["']|["']$/g, '');
   const rawKey = (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || '').trim().replace(/^\uFEFF/, '').replace(/^["']|["']$/g, '');
 
-  const SUPABASE_URL = rawUrl || "https://wecmvgvzkhiubnspqldo.supabase.co";
-  const SUPABASE_PUBLISHABLE_KEY = rawKey || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndlY212Z3Z6a2hpdWJuc3BxbGRvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkxMzQ5ODYsImV4cCI6MjA5NDcxMDk4Nn0.xB1pjvKV4krv5ZcujFIJ1u3lZ0NLIEGwLrVAy_DzDyI";
+  const SUPABASE_URL = rawUrl || "https://cjahyicuhqunpvoqqprd.supabase.co";
+  const SUPABASE_PUBLISHABLE_KEY = rawKey || "sb_publishable_680rg-Hj5pgm0QtsW3L6xQ_8q_uQWad";
 
   return createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
     auth: {
