@@ -1,5 +1,16 @@
 {
+  "version": 2,
   "cleanUrls": true,
+  "rewrites": [
+    {
+      "source": "/assets/(.*)",
+      "destination": "/assets/$1"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/__server"
+    }
+  ],
   "redirects": [
     { "source": "/login", "destination": "/auth", "permanent": false },
     { "source": "/entrar", "destination": "/auth", "permanent": false },
