@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Trash2 } from "lucide-react";
+import { Pagination } from "@/components/Pagination";
 import { useIncomes, useIncomeCategories } from "@/lib/storage";
 import { formatBRL, formatDateBR, parseCurrency, type IncomeCategory } from "@/lib/finance";
 import { toast } from "sonner";
@@ -34,6 +35,8 @@ function ReceitasPage() {
   const [amount, setAmount] = useState("");
   const [filter, setFilter] = useState<"" | IncomeCategory>("");
   const [submitting, setSubmitting] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   const filtered = useMemo(
     () =>
@@ -43,6 +46,11 @@ function ReceitasPage() {
     [incomes, filter],
   );
   const total = useMemo(() => filtered.reduce((s, i) => s + i.amount, 0), [filtered]);
+
+  const paginatedIncomes = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filtered.slice(start, start + itemsPerPage);
+  }, [filtered, currentPage, itemsPerPage]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -126,7 +134,15 @@ function ReceitasPage() {
           <CardHeader className="flex flex-row items-center justify-between flex-wrap gap-3">
             <CardTitle>Lançamentos ({filtered.length})</CardTitle>
             <div className="flex items-center gap-3">
-              <select className="h-9 rounded-md border bg-card px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary" value={filter} onChange={(e) => setFilter(e.target.value as "" | IncomeCategory)} aria-label="Filtrar por categoria">
+              <select
+                className="h-9 rounded-md border bg-card px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                value={filter}
+                onChange={(e) => {
+                  setFilter(e.target.value as "" | IncomeCategory);
+                  setCurrentPage(1);
+                }}
+                aria-label="Filtrar por categoria"
+              >
                 <option value="">Todas categorias</option>
                 {INCOME_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
@@ -147,7 +163,7 @@ function ReceitasPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {filtered.map((i) => (
+                  {paginatedIncomes.map((i) => (
                     <tr key={i.id} className="hover:bg-muted/50">
                       <td className="py-2.5 px-2 tabular-nums">{formatDateBR(i.date)}</td>
                       <td className="py-2.5 px-2">{i.description}</td>
@@ -169,6 +185,13 @@ function ReceitasPage() {
                 </tbody>
               </table>
             </div>
+            <Pagination
+              currentPage={currentPage}
+              totalItems={filtered.length}
+              itemsPerPage={itemsPerPage}
+              onPageChange={setCurrentPage}
+              onItemsPerPageChange={setItemsPerPage}
+            />
           </CardContent>
         </Card>
       </div>

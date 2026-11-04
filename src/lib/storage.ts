@@ -14,7 +14,7 @@ export function useExpenses() {
       if (!user) return [];
       const { data, error } = await supabase
         .from("expenses")
-        .select("*")
+        .select("id, date, description, category, payment, amount")
         .order("date", { ascending: false });
       if (error) throw error;
       return (data ?? []).map((r) => ({
@@ -86,7 +86,7 @@ export function useIncomes() {
       if (!user) return [];
       const { data, error } = await supabase
         .from("incomes")
-        .select("*")
+        .select("id, date, description, category, source, amount")
         .order("date", { ascending: false });
       if (error) throw error;
       return (data ?? []).map((r) => ({
