@@ -4,41 +4,93 @@ import { useAuth } from "./auth";
 import type { Budgets, Expense, Income } from "./finance";
 import { DEFAULT_BUDGETS, DEFAULT_CATEGORIES, DEFAULT_INCOME_CATEGORIES } from "./finance";
 
+function getLocal<T>(key: string, fallback: T): T {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const item = localStorage.getItem(key);
+    return item ? JSON.parse(item) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function setLocal<T>(key: string, value: T): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {}
+}
+
+const INITIAL_DEMO_EXPENSES: Expense[] = [
+  { id: "e-1", date: "2026-11-01", description: "Supermercado Semanal", category: "Alimentação", payment: "Cartão de Crédito", amount: 450.00 },
+  { id: "e-2", date: "2026-11-02", description: "Combustível", category: "Transporte", payment: "Pix", amount: 180.00 },
+  { id: "e-3", date: "2026-11-03", description: "Internet Fibra", category: "Contas", payment: "Débito Automático", amount: 120.00 },
+  { id: "e-4", date: "2026-11-03", description: "Aporte Tesouro Direto", category: "Investimentos", payment: "Pix", amount: 600.00 },
+];
+
+const INITIAL_DEMO_INCOMES: Income[] = [
+  { id: "i-1", date: "2026-11-01", description: "Salário Mensal", category: "Salário", source: "Empresa", amount: 5500.00 },
+  { id: "i-2", date: "2026-11-02", description: "Projeto Freelance", category: "Freelance", source: "Cliente", amount: 1200.00 },
+];
+
 export function useExpenses() {
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const queryClient = useQueryClient();
 
   const query = useQuery({
     queryKey: ["expenses", user?.id],
     queryFn: async (): Promise<Expense[]> => {
-      if (!user) return [];
-      const { data, error } = await supabase
-        .from("expenses")
-        .select("id, date, description, category, payment, amount")
-        .order("date", { ascending: false });
-      if (error) throw error;
-      return (data ?? []).map((r) => ({
-        id: r.id,
-        date: r.date,
-        description: r.description,
-        category: r.category,
-        payment: r.payment,
-        amount: Number(r.amount),
-      }));
+      if (session?.user) {
+        try {
+          const { data, error } = await supabase
+            .from("expenses")
+            .select("id, date, description, category, payment, amount")
+            .order("date", { ascending: false });
+          if (!error && data) {
+            const mapped = data.map((r) => ({
+              id: r.id,
+              date: r.date,
+              description: r.description,
+              category: r.category,
+              payment: r.payment,
+              amount: Number(r.amount),
+            }));
+            setLocal("fincontrol_expenses", mapped);
+            return mapped;
+          }
+        } catch {
+          // Fallback to local
+        }
+      }
+      return getLocal<Expense[]>("fincontrol_expenses", INITIAL_DEMO_EXPENSES);
     },
-    enabled: !!user,
+    staleTime: 1000 * 30,
   });
 
   const addMutation = useMutation({
     mutationFn: async (e: Omit<Expense, "id">) => {
-      if (!user) return;
-      const { data, error } = await supabase
-        .from("expenses")
-        .insert({ ...e, user_id: user.id })
-        .select()
-        .single();
-      if (error) throw error;
-      return data;
+      const newExpense: Expense = {
+        ...e,
+        id: typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `exp-${Date.now()}`,
+      };
+
+      if (session?.user) {
+        try {
+          const { data, error } = await supabase
+            .from("expenses")
+            .insert({ ...e, user_id: session.user.id })
+            .select()
+            .single();
+          if (!error && data) {
+            newExpense.id = data.id;
+          }
+        } catch {}
+      }
+
+      const current = getLocal<Expense[]>("fincontrol_expenses", INITIAL_DEMO_EXPENSES);
+      const updated = [newExpense, ...current];
+      setLocal("fincontrol_expenses", updated);
+      return newExpense;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["expenses", user?.id] });
@@ -47,8 +99,14 @@ export function useExpenses() {
 
   const removeMutation = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from("expenses").delete().eq("id", id);
-      if (error) throw error;
+      if (session?.user) {
+        try {
+          await supabase.from("expenses").delete().eq("id", id);
+        } catch {}
+      }
+      const current = getLocal<Expense[]>("fincontrol_expenses", INITIAL_DEMO_EXPENSES);
+      const updated = current.filter((item) => item.id !== id);
+      setLocal("fincontrol_expenses", updated);
       return id;
     },
     onSuccess: () => {
@@ -58,9 +116,12 @@ export function useExpenses() {
 
   const clearMutation = useMutation({
     mutationFn: async () => {
-      if (!user) return;
-      const { error } = await supabase.from("expenses").delete().eq("user_id", user.id);
-      if (error) throw error;
+      if (session?.user) {
+        try {
+          await supabase.from("expenses").delete().eq("user_id", session.user.id);
+        } catch {}
+      }
+      setLocal("fincontrol_expenses", []);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["expenses", user?.id] });
@@ -68,49 +129,72 @@ export function useExpenses() {
   });
 
   return {
-    expenses: query.data ?? [],
+    expenses: query.data ?? INITIAL_DEMO_EXPENSES,
     add: addMutation.mutateAsync,
     remove: removeMutation.mutateAsync,
     clear: clearMutation.mutateAsync,
-    hydrated: !query.isLoading && (query.isSuccess || !user),
+    hydrated: !query.isLoading,
   };
 }
 
 export function useIncomes() {
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const queryClient = useQueryClient();
 
   const query = useQuery({
     queryKey: ["incomes", user?.id],
     queryFn: async (): Promise<Income[]> => {
-      if (!user) return [];
-      const { data, error } = await supabase
-        .from("incomes")
-        .select("id, date, description, category, source, amount")
-        .order("date", { ascending: false });
-      if (error) throw error;
-      return (data ?? []).map((r) => ({
-        id: r.id,
-        date: r.date,
-        description: r.description,
-        category: r.category,
-        source: r.source ?? "",
-        amount: Number(r.amount),
-      }));
+      if (session?.user) {
+        try {
+          const { data, error } = await supabase
+            .from("incomes")
+            .select("id, date, description, category, source, amount")
+            .order("date", { ascending: false });
+          if (!error && data) {
+            const mapped = data.map((r) => ({
+              id: r.id,
+              date: r.date,
+              description: r.description,
+              category: r.category,
+              source: r.source ?? "",
+              amount: Number(r.amount),
+            }));
+            setLocal("fincontrol_incomes", mapped);
+            return mapped;
+          }
+        } catch {
+          // Fallback to local
+        }
+      }
+      return getLocal<Income[]>("fincontrol_incomes", INITIAL_DEMO_INCOMES);
     },
-    enabled: !!user,
+    staleTime: 1000 * 30,
   });
 
   const addMutation = useMutation({
     mutationFn: async (i: Omit<Income, "id">) => {
-      if (!user) return;
-      const { data, error } = await supabase
-        .from("incomes")
-        .insert({ ...i, user_id: user.id })
-        .select()
-        .single();
-      if (error) throw error;
-      return data;
+      const newIncome: Income = {
+        ...i,
+        id: typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `inc-${Date.now()}`,
+      };
+
+      if (session?.user) {
+        try {
+          const { data, error } = await supabase
+            .from("incomes")
+            .insert({ ...i, user_id: session.user.id })
+            .select()
+            .single();
+          if (!error && data) {
+            newIncome.id = data.id;
+          }
+        } catch {}
+      }
+
+      const current = getLocal<Income[]>("fincontrol_incomes", INITIAL_DEMO_INCOMES);
+      const updated = [newIncome, ...current];
+      setLocal("fincontrol_incomes", updated);
+      return newIncome;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["incomes", user?.id] });
@@ -119,8 +203,14 @@ export function useIncomes() {
 
   const removeMutation = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from("incomes").delete().eq("id", id);
-      if (error) throw error;
+      if (session?.user) {
+        try {
+          await supabase.from("incomes").delete().eq("id", id);
+        } catch {}
+      }
+      const current = getLocal<Income[]>("fincontrol_incomes", INITIAL_DEMO_INCOMES);
+      const updated = current.filter((item) => item.id !== id);
+      setLocal("fincontrol_incomes", updated);
       return id;
     },
     onSuccess: () => {
@@ -129,45 +219,52 @@ export function useIncomes() {
   });
 
   return {
-    incomes: query.data ?? [],
+    incomes: query.data ?? INITIAL_DEMO_INCOMES,
     add: addMutation.mutateAsync,
     remove: removeMutation.mutateAsync,
-    hydrated: !query.isLoading && (query.isSuccess || !user),
+    hydrated: !query.isLoading,
   };
 }
 
 export function useBudgets() {
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const queryClient = useQueryClient();
 
   const query = useQuery({
     queryKey: ["budgets", user?.id],
     queryFn: async (): Promise<Budgets> => {
-      if (!user) return DEFAULT_BUDGETS;
-      const { data, error } = await supabase.from("budgets").select("*");
-      if (error) throw error;
-      const map: Budgets = { ...DEFAULT_BUDGETS };
-      (data ?? []).forEach((r) => {
-        map[r.category] = Number(r.amount);
-      });
-      return map;
+      if (session?.user) {
+        try {
+          const { data, error } = await supabase.from("budgets").select("*");
+          if (!error && data) {
+            const map: Budgets = { ...DEFAULT_BUDGETS };
+            data.forEach((r) => {
+              map[r.category] = Number(r.amount);
+            });
+            setLocal("fincontrol_budgets", map);
+            return map;
+          }
+        } catch {}
+      }
+      return getLocal<Budgets>("fincontrol_budgets", DEFAULT_BUDGETS);
     },
-    enabled: !!user,
+    staleTime: 1000 * 30,
   });
 
   const updateMutation = useMutation({
     mutationFn: async (next: Budgets) => {
-      if (!user) return;
-      const rows = Object.entries(next).map(([category, amount]) => ({
-        user_id: user.id,
-        category,
-        amount,
-      }));
-      if (rows.length > 0) {
-        const { error } = await supabase
-          .from("budgets")
-          .upsert(rows, { onConflict: "user_id,category" });
-        if (error) throw error;
+      setLocal("fincontrol_budgets", next);
+      if (session?.user) {
+        try {
+          const rows = Object.entries(next).map(([category, amount]) => ({
+            user_id: session.user.id,
+            category,
+            amount,
+          }));
+          if (rows.length > 0) {
+            await supabase.from("budgets").upsert(rows, { onConflict: "user_id,category" });
+          }
+        } catch {}
       }
       return next;
     },
@@ -189,26 +286,34 @@ export function useBudgets() {
   return {
     budgets: query.data ?? DEFAULT_BUDGETS,
     setBudgets,
-    hydrated: !query.isLoading && (query.isSuccess || !user),
+    hydrated: !query.isLoading,
   };
 }
 
 function useCustomCategoriesOfKind(kind: "expense" | "income", defaults: string[]) {
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const queryClient = useQueryClient();
+  const storageKey = `fincontrol_categories_${kind}`;
 
   const query = useQuery({
     queryKey: ["custom_categories", kind, user?.id],
     queryFn: async (): Promise<string[]> => {
-      if (!user) return [];
-      const { data, error } = await supabase
-        .from("custom_categories")
-        .select("name")
-        .eq("kind", kind);
-      if (error) throw error;
-      return (data ?? []).map((r) => r.name);
+      if (session?.user) {
+        try {
+          const { data, error } = await supabase
+            .from("custom_categories")
+            .select("name")
+            .eq("kind", kind);
+          if (!error && data) {
+            const names = data.map((r) => r.name);
+            setLocal(storageKey, names);
+            return names;
+          }
+        } catch {}
+      }
+      return getLocal<string[]>(storageKey, []);
     },
-    enabled: !!user,
+    staleTime: 1000 * 30,
   });
 
   const custom = query.data ?? [];
@@ -217,11 +322,14 @@ function useCustomCategoriesOfKind(kind: "expense" | "income", defaults: string[
   const addMutation = useMutation({
     mutationFn: async (name: string) => {
       const n = name.trim();
-      if (!n || all.includes(n) || !user) return;
-      const { error } = await supabase
-        .from("custom_categories")
-        .insert({ user_id: user.id, kind, name: n });
-      if (error) throw error;
+      if (!n || all.includes(n)) return;
+      const updated = [...custom, n];
+      setLocal(storageKey, updated);
+      if (session?.user) {
+        try {
+          await supabase.from("custom_categories").insert({ user_id: session.user.id, kind, name: n });
+        } catch {}
+      }
       return n;
     },
     onSuccess: () => {
@@ -231,14 +339,18 @@ function useCustomCategoriesOfKind(kind: "expense" | "income", defaults: string[
 
   const removeMutation = useMutation({
     mutationFn: async (name: string) => {
-      if (!user) return;
-      const { error } = await supabase
-        .from("custom_categories")
-        .delete()
-        .eq("user_id", user.id)
-        .eq("kind", kind)
-        .eq("name", name);
-      if (error) throw error;
+      const updated = custom.filter((item) => item !== name);
+      setLocal(storageKey, updated);
+      if (session?.user) {
+        try {
+          await supabase
+            .from("custom_categories")
+            .delete()
+            .eq("user_id", session.user.id)
+            .eq("kind", kind)
+            .eq("name", name);
+        } catch {}
+      }
       return name;
     },
     onSuccess: () => {

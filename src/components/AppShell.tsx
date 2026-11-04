@@ -38,28 +38,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { user, loading } = useAuth();
-
-  useEffect(() => {
-    if (!loading && !user) navigate({ to: "/auth" });
-  }, [loading, user, navigate]);
-
-  if (loading || !user) {
-    return (
-      <div className="min-h-screen grid place-items-center text-muted-foreground">
-        <div className="flex flex-col items-center gap-3">
-          <div className="size-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
-          <span className="text-sm">Carregando FinControl...</span>
-        </div>
-      </div>
-    );
-  }
+  const { user } = useAuth();
 
   const signOut = async () => {
     await queryClient.cancelQueries();
     queryClient.clear();
-    await supabase.auth.signOut();
-    navigate({ to: "/auth", replace: true });
+    await supabase.auth.signOut().catch(() => {});
+    window.location.href = "/";
   };
 
   const displayName = (user.user_metadata?.full_name as string | undefined) || user.email || "";
